@@ -1,3 +1,8 @@
+/*
+* @author javed.shah@forgerock.com
+* Check group membership for user 
+* Set manager as actor if member of group
+*/
 import org.forgerock.oauth2.core.UserInfoClaims
 import com.sun.identity.idm.IdType
 
