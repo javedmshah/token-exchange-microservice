@@ -1,0 +1,31 @@
+#author Javed Shah, 2017-18
+title Delegation with TokenExchange
+
+participantspacing 0
+
+actor "Alice" as Alice
+#supported participant types: participant, actor, boundary, control, entity, database
+
+participant Client Service #lightyellow
+participant consumer.example.com #lightblue
+participant FR TokenExchange µService #orange
+participant FR AuthN µService #orange
+participant OAuth2 Provider #lightgreen
+participant User Repo #lightgreen
+participant Backend #gray
+
+
+Alice->OAuth2 Provider:Authenticate with OAuth2 provider
+
+OAuth2 Provider-#green>Alice:Alice authenticated. \n OAuth2 Provider also returns list of actors with delegation authorization.\n\nJWT\n{\n      "aud":"https://consumer.example.com",\n      "iss":"https://issuer.example.com",\n      "sub":"ALICE",\n      "MAY_ACT":\n      {\n        "sub":"BOB"\n      }\n    }
+Alice->Client Service:Request consumer.example.com \nusing <Alice's access_token>
+Client Service->FR AuthN µService:Client service does not have actor's token.\n Requests token from authN service.\n
+Client Service<#green-FR AuthN µService:*** OpenAM grants authorization for Bob out-of-band (not shown here) ***\nFR AuthN service issues subject access token.\nJWT\n{\n      "aud":"https://consumer.example.com",\n      "iss":"https://issuer.example.com",\n      "sub":"BOB"\n}
+Client Service-#blue>consumer.example.com:Client uses BOB's access token with "act"\n at consumer.example.com\nJWT\n{\n      "aud":"https://consumer.example.com",\n      "iss":"https://issuer.example.com",\n      "sub":"ALICE",\n      "ACT":\n      {\n        "sub":"BOB"\n      }\n    }
+consumer.example.com->FR TokenExchange µService:**Consumer service requests to exchange \nreceived token with one that can be used at backend service.**\n REQUEST\n\naudience=backend.example.com\n&subject_token=$EX_SUBJECT_TOKEN\n&actor_token=$EX_BEARER_TOKEN
+FR TokenExchange µService->OAuth2 Provider:POST --header "Content-Type: application/json" \n--header "iPlanetDirectoryPro: ####" \n--data '{ "subject" : {  "ssoToken" : "####"\n  },   "application": "resource_policies",\n    "resources": [        "http://images.example.com/"    ]}' \n/openam/json/realms/root/policies?_action=evaluate
+OAuth2 Provider->User Repo:fetch response attrs
+OAuth2 Provider<-User Repo:response attrs
+FR TokenExchange µService<-OAuth2 Provider:Result of Policy Decision with \nresponse attributes and allowed scopes:\n[  {    "advices": {},    "ttl": 9223372036854776000,\n    "resource": "http://images.example.com/",    "actions": {},\n    "attributes": {\n      "expiresIn": [        "3600"      ],\n      "scp": [        "resource_write",        "resource_read"      ],\n      "uid": [        "BOB"      ],      "aud": [        "backend.example.com"      ]\n    }  }\n]
+consumer.example.com<#green-FR TokenExchange µService:FR Token Exchange service returns hybrid token with delegation chain.\n JWT\n{\n      "aud":"https://backend.example.com",\n      "iss":"https://issuer.example.com",\n      "exp":1443904100,\n      "nbf":1443904000,\n      "sub":"ALICE", "scp":["resource_read", "resource_write"],\n      "ACT":\n      {\n        "sub":"consumer.example.com-web-application",\n        "iss":"https://issuer.example.net",\n        "ACT":\n        {\n          "sub":"BOB"\n        }\n      }\n    }\n
+consumer.example.com-#blue>Backend:**Consumer service can now use\n hybrid token with BOB as delegate for making requests\n into backend.example.com**
